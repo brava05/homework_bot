@@ -63,6 +63,7 @@ def send_message(bot, message) -> telegram.message.Message:
     except TelegramError:
         send_and_logging_error(f'НЕ Отправлено сообщение: {message}')
 
+
 def get_api_answer(current_timestamp) -> dict:
     """делает запрос к API-сервису.
     В качестве параметра функция получает временную метку.
@@ -71,7 +72,7 @@ def get_api_answer(current_timestamp) -> dict:
     """
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    params = {'from_date': 1656333949}  # 27/06
+    # params = {'from_date': 1656333949}  # 27/06
     try:
         answer = requests.get(ENDPOINT, headers=HEADERS, params=params)
     except requests.exceptions.HTTPError as error:
