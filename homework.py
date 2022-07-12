@@ -1,15 +1,14 @@
-
 import logging
 import os
 import time
+from http import HTTPStatus
+from json.decoder import JSONDecodeError
 
 import requests
 import telegram
-
 from dotenv import load_dotenv
 from telegram import Bot, TelegramError
-from http import HTTPStatus
-from json.decoder import JSONDecodeError
+
 
 load_dotenv()
 
@@ -53,7 +52,7 @@ def send_and_logging_error(message) -> None:
 
 
 def send_message(bot, message) -> telegram.message.Message:
-    """отправляет сообщение в Telegram чат."""
+    """Отправляет сообщение в Telegram чат."""
     telegram_message = bot.send_message(TELEGRAM_CHAT_ID, message)
 
     try:
@@ -65,7 +64,7 @@ def send_message(bot, message) -> telegram.message.Message:
 
 
 def get_api_answer(current_timestamp) -> dict:
-    """делает запрос к API-сервису.
+    """Делает запрос к API-сервису.
     В качестве параметра функция получает временную метку.
     В случае успешного запроса должна вернуть ответ API,
     преобразовав его из формата JSON к типам данных Python
@@ -99,7 +98,7 @@ def get_api_answer(current_timestamp) -> dict:
 
 
 def check_response(response) -> list:
-    """Gроверяет ответ API на корректность.
+    """Проверяет ответ API на корректность.
     Если ответ API соответствует ожиданиям,
     то функция должна вернуть список домашних работ
     """
@@ -108,7 +107,6 @@ def check_response(response) -> list:
         # это чтобы пройти pytest
         raise TypeError('В ответ от API вернулся не словарь')
 
-    # проверяем что homeworks существуют
     homeworks_list = response.get('homeworks')
     if homeworks_list is None:
         send_and_logging_error('В ответе от API нет ключа homeworks')
@@ -119,7 +117,6 @@ def check_response(response) -> list:
         send_and_logging_error('В ответе от API нет ключа current_date')
         return None
 
-    # проверяем что homeworks это список
     if not isinstance(homeworks_list, list):
         send_and_logging_error('homeworks_list не список')
         return None
@@ -128,7 +125,7 @@ def check_response(response) -> list:
 
 
 def parse_status(homework) -> str:
-    """извлекает из информации о конкретной домашней работе статус этой работы.
+    """Извлекает из информации о конкретной домашней работе статус этой работы.
     В качестве параметра функция получает только один элемент
     из списка домашних работ.
     В случае успеха, функция возвращает подготовленную для отправки
@@ -150,7 +147,7 @@ def parse_status(homework) -> str:
 
 
 def check_tokens() -> bool:
-    """проверяет доступность переменных окружения.
+    """Проверяет доступность переменных окружения.
     которые необходимы для работы программы.
     """
     if PRACTICUM_TOKEN is None:
@@ -175,7 +172,6 @@ def main():
         try:
             response = get_api_answer(current_timestamp)
             homeworks_list = check_response(response)
-            # если вернулось ничего, то надо заершать, что-то пошло не так
             if homeworks_list is None:
                 return
             if len(homeworks_list) > 0:
