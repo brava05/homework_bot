@@ -1,10 +1,15 @@
-import requests
+
 import logging
 import os
 import time
+
+import requests
 import telegram
+
 from dotenv import load_dotenv
-from telegram import Bot
+from telegram import Bot, TelegramError
+from http import HTTPStatus
+from json.decoder import JSONDecodeError
 
 load_dotenv()
 
@@ -14,6 +19,7 @@ logging.basicConfig(
     format='%(asctime)s, %(levelname)s, %(message)s, %(name)s',
     filemode='w'
 )
+logger = logging.getLogger(__name__)
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -35,25 +41,27 @@ def send_and_logging_error(message) -> None:
     """Отправляет сообщение c содержимым ошибки в Telegram чат.
     если до этого сообщение не было отправлено.
     """
-    logging.error(message)
+    logger.error(message)
 
     if message in LIST_OF_ERRORS:
         return
 
     bot = Bot(token=TELEGRAM_TOKEN)
-    telegram_message = bot.send_message(TELEGRAM_CHAT_ID, message)
+    telegram_message = send_message(bot, message)
     if isinstance(telegram_message, telegram.message.Message):
         LIST_OF_ERRORS.append(message)
 
 
-def send_message(bot, message) -> None:
+def send_message(bot, message) -> telegram.message.Message:
     """отправляет сообщение в Telegram чат."""
     telegram_message = bot.send_message(TELEGRAM_CHAT_ID, message)
-    if isinstance(telegram_message, telegram.message.Message):
-        logging.info(f'Отправлено сообщение: {message}')
-    else:
-        send_and_logging_error(f'НЕ Отправлено сообщение: {message}')
 
+    try:
+        telegram_message = bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.info(f'Отправлено сообщение: {message}')
+        return telegram_message
+    except TelegramError:
+        send_and_logging_error(f'НЕ Отправлено сообщение: {message}')
 
 def get_api_answer(current_timestamp) -> dict:
     """делает запрос к API-сервису.
@@ -63,18 +71,30 @@ def get_api_answer(current_timestamp) -> dict:
     """
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    # params = {'from_date': 1656333949}  # 27/06
+    params = {'from_date': 1656333949}  # 27/06
     try:
         answer = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    except Exception as error:
-        send_and_logging_error(error, exc_info=True)
+    except requests.exceptions.HTTPError as error:
+        send_and_logging_error(f'Http Error: {error}')
+        return None
+    except requests.exceptions.ConnectionError as error:
+        send_and_logging_error(f'Error Connecting: {error}')
+        return None
+    except requests.exceptions.Timeout as error:
+        send_and_logging_error(f'Timeout Error: {error}')
+        return None
+    except requests.exceptions.RequestException as error:
+        send_and_logging_error(f'Error: {error}')
         return None
 
-    if answer.status_code != 200:
+    if answer.status_code != HTTPStatus.OK:
         send_and_logging_error(f'В ответ от API статус {answer.status_code}')
         return None
 
-    return answer.json()
+    try:
+        return answer.json()
+    except JSONDecodeError:
+        send_and_logging_error('Ошибка преобразования в джейсон')
 
 
 def check_response(response) -> list:
@@ -82,19 +102,18 @@ def check_response(response) -> list:
     Если ответ API соответствует ожиданиям,
     то функция должна вернуть список домашних работ
     """
-    # если вернулся не словать, то дальше с ним работать смысла нет
     if not isinstance(response, dict):
         # send_and_logging_error('В ответ от API вернулся не словарь')
         # это чтобы пройти pytest
         raise TypeError('В ответ от API вернулся не словарь')
 
     # проверяем что homeworks существуют
-    homeworks_list = response.get('homeworks', None)
+    homeworks_list = response.get('homeworks')
     if homeworks_list is None:
         send_and_logging_error('В ответе от API нет ключа homeworks')
         return None
 
-    current_date = response.get('current_date', None)
+    current_date = response.get('current_date')
     if current_date is None:
         send_and_logging_error('В ответе от API нет ключа current_date')
         return None
@@ -114,7 +133,7 @@ def parse_status(homework) -> str:
     В случае успеха, функция возвращает подготовленную для отправки
     в Telegram строку, содержащую один из вердиктов словаря
     """
-    homework_name = homework.get('homework_name', None)
+    homework_name = homework.get('homework_name')
     if homework_name is None:
         # send_and_logging_error('В словаре homework нет поля homework_name')
         # это чтобы пройти pytest
@@ -145,14 +164,13 @@ def check_tokens() -> bool:
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logging.critical('Не доступны переменные окружения!')
+        logger.critical('Не доступны переменные окружения!')
         return
 
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
-    i = True
-    while i:
+    while True:
         try:
             response = get_api_answer(current_timestamp)
             homeworks_list = check_response(response)
@@ -166,15 +184,12 @@ def main():
                 send_message(bot, message)
 
             time.sleep(RETRY_TIME)
-            i = False
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            # print(f'ошибка {error}')
             send_and_logging_error(message)
             time.sleep(RETRY_TIME)
         else:
-            # print('неопознанный косяк')
             send_and_logging_error('неопознанный косяк')
 
 
